@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { StatusBar } from "expo-status-bar";
 import { GLView } from "expo-gl";
 import * as THREE from "three";
@@ -24,22 +24,45 @@ type SceneState = {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   placeholder: THREE.Mesh;
-  model: THREE.Object3D | null;
+  modelPivot: THREE.Group | null;
 };
+
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const clean = base64.replace(/[^A-Za-z0-9+/]/g, "");
+  const outputLength = Math.floor((clean.length * 3) / 4);
+  const bytes = new Uint8Array(outputLength);
+  let buffer = 0;
+  let bits = 0;
+  let index = 0;
+
+  for (let i = 0; i < clean.length; i += 1) {
+    const value = chars.indexOf(clean[i]);
+    if (value < 0) continue;
+    buffer = (buffer << 6) | value;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      bytes[index] = (buffer >> bits) & 0xff;
+      index += 1;
+    }
+  }
+  return bytes.buffer.slice(0, index);
+}
 
 function disposeObject(object: THREE.Object3D) {
   object.traverse((child) => {
     const mesh = child as THREE.Mesh;
     mesh.geometry?.dispose?.();
-    if (mesh.material) {
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      materials.forEach((material) => {
-        Object.values(material).forEach((value) => {
-          if (value instanceof THREE.Texture) value.dispose();
-        });
-        material.dispose();
+    if (!mesh.material) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    materials.forEach((material) => {
+      Object.values(material).forEach((value) => {
+        if (value instanceof THREE.Texture) value.dispose();
       });
-    }
+      material.dispose();
+    });
   });
 }
 
@@ -51,52 +74,87 @@ export default function App() {
   const frameId = useRef<number | null>(null);
   const cancelFrame = useRef<((id: number) => void) | null>(null);
   const sceneState = useRef<SceneState | null>(null);
-  const [pendingModel, setPendingModel] = useState<string | null>(null);
+  const pendingModelRef = useRef<string | null>(null);
+  const loadIdRef = useRef(0);
 
-  const loadModel = (uri: string) => {
+  const applyLoadedModel = (loadedScene: THREE.Group, loadId: number) => {
     const state = sceneState.current;
-    if (!state) {
-      setPendingModel(uri);
+    if (!state || loadId !== loadIdRef.current) {
+      disposeObject(loadedScene);
       return;
     }
 
-    new GLTFLoader().load(
-      uri,
-      (gltf) => {
-        if (state.model) {
-          state.scene.remove(state.model);
-          disposeObject(state.model);
-        }
+    if (state.modelPivot) {
+      state.scene.remove(state.modelPivot);
+      disposeObject(state.modelPivot);
+    }
 
-        const model = gltf.scene;
-        const box = new THREE.Box3().setFromObject(model);
-        const size = box.getSize(new THREE.Vector3());
-        const center = box.getCenter(new THREE.Vector3());
-        const maxSize = Math.max(size.x, size.y, size.z, 0.001);
-        const scale = 2 / maxSize;
+    const box = new THREE.Box3().setFromObject(loadedScene);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const maxSize = Math.max(size.x, size.y, size.z, 0.001);
+    const scale = 2 / maxSize;
 
-        model.scale.setScalar(scale);
-        model.position.set(
-          -center.x * scale,
-          -center.y * scale,
-          -center.z * scale,
-        );
+    loadedScene.scale.setScalar(scale);
+    loadedScene.position.set(
+      -center.x * scale,
+      -center.y * scale,
+      -center.z * scale,
+    );
 
-        state.placeholder.visible = false;
-        state.model = model;
-        state.scene.add(model);
-        state.camera.position.z = THREE.MathUtils.clamp(3.2, 1.2, 12);
-        rotation.current = { x: 0, y: 0 };
-        baseRot.current = { x: 0, y: 0 };
-      },
-      undefined,
-      () => {
+    const pivot = new THREE.Group();
+    pivot.add(loadedScene);
+    state.placeholder.visible = false;
+    state.modelPivot = pivot;
+    state.scene.add(pivot);
+    state.camera.position.z = THREE.MathUtils.clamp(3.2, 1.2, 12);
+    rotation.current = { x: 0, y: 0 };
+    baseRot.current = { x: 0, y: 0 };
+  };
+
+  const loadModel = async (uri: string) => {
+    const state = sceneState.current;
+    if (!state) {
+      pendingModelRef.current = uri;
+      return;
+    }
+
+    const loadId = ++loadIdRef.current;
+    const loader = new GLTFLoader();
+    const onError = () => {
+      if (loadId === loadIdRef.current) {
         Alert.alert(
           "3D Nexus",
           "Model yüklenemedi. GLB dosyasını yeniden seçmeyi deneyin.",
         );
-      },
-    );
+      }
+    };
+
+    if (/^https?:\/\//i.test(uri)) {
+      loader.load(
+        uri,
+        (gltf) => applyLoadedModel(gltf.scene, loadId),
+        undefined,
+        onError,
+      );
+      return;
+    }
+
+    try {
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      if (loadId !== loadIdRef.current) return;
+      const buffer = base64ToArrayBuffer(base64);
+      loader.parse(
+        buffer,
+        "",
+        (gltf) => applyLoadedModel(gltf.scene, loadId),
+        onError,
+      );
+    } catch {
+      onError();
+    }
   };
 
   const selectModel = async () => {
@@ -108,25 +166,33 @@ export default function App() {
       if (result.canceled) return;
 
       const asset = result.assets[0];
-      if (!asset || !/\.(glb|gltf)$/i.test(asset.name)) {
+      if (!asset) return;
+      const sourceName = asset.name || decodeURIComponent(asset.uri.split("/").pop() || "");
+      if (!/\.(glb|gltf)(?:$|\?)/i.test(sourceName)) {
         Alert.alert("3D Nexus", "Lütfen GLB veya GLTF dosyası seçin.");
         return;
       }
 
       let uri = asset.uri;
       if (uri.startsWith("content://")) {
+        const extension = sourceName.toLowerCase().includes(".gltf") ? ".gltf" : ".glb";
         const destination =
-          FileSystem.cacheDirectory +
-          "3d-nexus-" +
-          Date.now() +
-          (asset.name.toLowerCase().endsWith(".gltf") ? ".gltf" : ".glb");
+          FileSystem.cacheDirectory + "3d-nexus-" + Date.now() + extension;
         await FileSystem.copyAsync({ from: uri, to: destination });
         uri = destination;
       }
-      loadModel(uri);
+      await loadModel(uri);
     } catch {
       Alert.alert("3D Nexus", "Dosya seçilirken bir hata oluştu.");
     }
+  };
+
+  const beginPinch = (touches: readonly any[]) => {
+    if (touches.length < 2) return;
+    const dx = touches[0].pageX - touches[1].pageX;
+    const dy = touches[0].pageY - touches[1].pageY;
+    pinchDistance.current = Math.hypot(dx, dy);
+    pinchStartZ.current = sceneState.current?.camera.position.z ?? 3;
   };
 
   const panResponder = useRef(
@@ -135,21 +201,16 @@ export default function App() {
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (event) => {
         baseRot.current = { ...rotation.current };
-        const touches = event.nativeEvent.touches;
-        if (touches.length >= 2) {
-          const dx = touches[0].pageX - touches[1].pageX;
-          const dy = touches[0].pageY - touches[1].pageY;
-          pinchDistance.current = Math.hypot(dx, dy);
-          pinchStartZ.current = sceneState.current?.camera.position.z ?? 3;
-        }
+        beginPinch(event.nativeEvent.touches);
       },
       onPanResponderMove: (event, gestureState) => {
         const touches = event.nativeEvent.touches;
         if (touches.length >= 2 && sceneState.current) {
+          if (pinchDistance.current === null) beginPinch(touches);
           const dx = touches[0].pageX - touches[1].pageX;
           const dy = touches[0].pageY - touches[1].pageY;
           const distance = Math.hypot(dx, dy);
-          if (pinchDistance.current) {
+          if (pinchDistance.current !== null) {
             const delta = (pinchDistance.current - distance) * 0.01;
             sceneState.current.camera.position.z = THREE.MathUtils.clamp(
               pinchStartZ.current + delta,
@@ -160,6 +221,7 @@ export default function App() {
           return;
         }
 
+        pinchDistance.current = null;
         rotation.current.y = baseRot.current.y + gestureState.dx * 0.01;
         rotation.current.x = baseRot.current.x + gestureState.dy * 0.01;
       },
@@ -174,11 +236,12 @@ export default function App() {
 
   useEffect(() => {
     return () => {
+      loadIdRef.current += 1;
       if (frameId.current !== null && cancelFrame.current) {
         cancelFrame.current(frameId.current);
       }
       const state = sceneState.current;
-      if (state?.model) disposeObject(state.model);
+      if (state?.modelPivot) disposeObject(state.modelPivot);
       state?.placeholder.geometry.dispose();
       const material = state?.placeholder.material;
       if (material && !Array.isArray(material)) material.dispose();
@@ -233,7 +296,7 @@ export default function App() {
       scene,
       camera,
       placeholder,
-      model: null,
+      modelPivot: null,
     };
 
     const requestFrame =
@@ -246,7 +309,7 @@ export default function App() {
         : cancelAnimationFrame;
 
     const render = () => {
-      const target = sceneState.current?.model ?? placeholder;
+      const target = sceneState.current?.modelPivot ?? placeholder;
       target.rotation.x = rotation.current.x;
       target.rotation.y = rotation.current.y;
       renderer.render(scene, camera);
@@ -255,9 +318,10 @@ export default function App() {
     };
     render();
 
-    if (pendingModel) {
-      loadModel(pendingModel);
-      setPendingModel(null);
+    const pending = pendingModelRef.current;
+    if (pending) {
+      pendingModelRef.current = null;
+      void loadModel(pending);
     }
   };
 
@@ -265,10 +329,10 @@ export default function App() {
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
       <View style={styles.toolbar}>
-        <Pressable style={styles.button} onPress={() => loadModel(SAMPLE_URL)}>
+        <Pressable style={styles.button} onPress={() => void loadModel(SAMPLE_URL)}>
           <Text style={styles.buttonText}>Örnek model</Text>
         </Pressable>
-        <Pressable style={styles.button} onPress={selectModel}>
+        <Pressable style={styles.button} onPress={() => void selectModel()}>
           <Text style={styles.buttonText}>GLB seç</Text>
         </Pressable>
       </View>

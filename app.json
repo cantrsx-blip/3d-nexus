@@ -13,7 +13,9 @@
       ["expo-media-library", {
         "photosPermission": "3D Nexus, görsellerinizi göstermek için medya arşivinize erişir.",
         "savePhotosPermission": "3D Nexus, ürettiğiniz görselleri galerinize kaydetmek için izin ister."
-      }]
+      }],
+      "expo-document-picker",
+      "expo-file-system"
     ]
   }
 }
