@@ -15,18 +15,25 @@
     },
     "android": {
       "package": "com.nexus3d.app",
-      "permissions": ["READ_MEDIA_IMAGES", "INTERNET"],
+      "permissions": [
+        "READ_MEDIA_IMAGES",
+        "INTERNET"
+      ],
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0a0a0b"
-      }
+      },
+      "largeHeap": true
     },
     "plugins": [
-      ["expo-media-library", {
-        "photosPermission": "3D Nexus, görsellerinizi göstermek için medya arşivinize erişir.",
-        "savePhotosPermission": "3D Nexus, ürettiğiniz görselleri galerinize kaydetmek için izin ister."
-      }],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "3D Nexus, görsellerinizi göstermek için medya arşivinize erişir.",
+          "savePhotosPermission": "3D Nexus, ürettiğiniz görselleri galerinize kaydetmek için izin ister."
+        }
+      ],
       "expo-document-picker",
       "expo-file-system"
     ],
