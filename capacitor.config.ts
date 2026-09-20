@@ -1,0 +1,1 @@
+import type {CapacitorConfig} from '@capacitor/cli';const config:CapacitorConfig={appId:'com.nexus3d.studio',appName:'3D Nexus',webDir:'dist'};export default config;

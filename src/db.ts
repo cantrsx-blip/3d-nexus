@@ -1,0 +1,1 @@
+import Dexie,{type EntityTable}from'dexie';export type SavedModel={id?:number;name:string;blob:Blob;updated:number};export type GalleryItem={id?:number;name:string;blob:Blob;created:number};export const db=new Dexie('3DNexus')as Dexie&{models:EntityTable<SavedModel,'id'>;gallery:EntityTable<GalleryItem,'id'>};db.version(1).stores({models:'++id,updated',gallery:'++id,created'});
