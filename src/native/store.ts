@@ -45,6 +45,30 @@ type StudioState = {
   setGallery: (items: GalleryItem[]) => void;
 };
 
+const safeStorage = {
+  getItem: async (name: string) => {
+    try {
+      return await AsyncStorage.getItem(name);
+    } catch {
+      return null;
+    }
+  },
+  setItem: async (name: string, value: string) => {
+    try {
+      await AsyncStorage.setItem(name, value);
+    } catch {
+      // Persist hatası uygulamayı kapatmamalı.
+    }
+  },
+  removeItem: async (name: string) => {
+    try {
+      await AsyncStorage.removeItem(name);
+    } catch {
+      // Varsayılan state kullanılmaya devam eder.
+    }
+  },
+};
+
 export const useStudioStore = create<StudioState>()(
   persist(
     (set) => ({
@@ -77,7 +101,7 @@ export const useStudioStore = create<StudioState>()(
     }),
     {
       name: "3d-nexus-studio",
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => safeStorage),
       partialize: (state) => ({
         selectedPreset: state.selectedPreset,
         exportFormat: state.exportFormat,

@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { Component, type ErrorInfo, type ReactNode, useEffect, useRef, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { GLView } from "expo-gl";
 import * as THREE from "three";
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import { exportSceneImage, type ExportFormat, type ExportOptions, type ExportResult } from "./src/native/exportImage";
@@ -28,7 +27,7 @@ const LIGHT_PRESETS: LightPreset[] = ["Ürün", "Portre", "Karanlık", "Beyaz st
 
 type SceneState = {
   gl: any;
-  renderer: THREE.WebGLRenderer;
+  renderer: THREE.WebGLRenderer | null;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   placeholder: THREE.Mesh;
@@ -75,7 +74,36 @@ function disposeObject(object: THREE.Object3D) {
   });
 }
 
-export default function App() {
+class ErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  state = { error: null as Error | null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, _info: ErrorInfo) {
+    this.setState({ error });
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <SafeAreaView style={styles.safe}>
+          <View style={styles.fatalError}>
+            <Text style={styles.fatalTitle}>3D Nexus açılırken hata oluştu.</Text>
+            <Text style={styles.fatalMessage}>{this.state.error.message}</Text>
+          </View>
+        </SafeAreaView>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function StudioApp() {
   const rotation = useRef({ x: 0, y: 0 });
   const baseRot = useRef({ x: 0, y: 0 });
   const pinchDistance = useRef<number | null>(null);
@@ -89,6 +117,7 @@ export default function App() {
   const [exportOpen, setExportOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
+  const [glError, setGlError] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(useStudioStore.persist.hasHydrated());
 
   const selectedPreset = useStudioStore((state) => state.selectedPreset) as LightPreset;
@@ -135,27 +164,27 @@ export default function App() {
     };
 
     if (preset === "Ürün") {
-      state.renderer.setClearColor(0x0a0a0b, 1);
+      state.renderer?.setClearColor(0x0a0a0b, 1);
       state.lightRig.add(new THREE.AmbientLight(0xffffff, 1.15));
       addDirectional(0xffffff, 2.5, [3, 4, 5]);
       addDirectional(0xbfd8ff, 1.1, [-4, 2, 2]);
     } else if (preset === "Portre") {
-      state.renderer.setClearColor(0x0a0a0b, 1);
+      state.renderer?.setClearColor(0x0a0a0b, 1);
       state.lightRig.add(new THREE.AmbientLight(0xffead8, 0.9));
       addDirectional(0xffd7b0, 2.3, [2, 4, 4]);
       addDirectional(0xb9d7ff, 0.8, [-3, 1, 2]);
     } else if (preset === "Karanlık") {
-      state.renderer.setClearColor(0x050608, 1);
+      state.renderer?.setClearColor(0x050608, 1);
       state.lightRig.add(new THREE.AmbientLight(0x9eb7d6, 0.28));
       addDirectional(0x8fb9ff, 1.8, [4, 3, 2]);
       addDirectional(0xffffff, 0.45, [-3, -1, 1]);
     } else if (preset === "Beyaz stüdyo") {
-      state.renderer.setClearColor(0xe8eaed, 1);
+      state.renderer?.setClearColor(0xe8eaed, 1);
       state.lightRig.add(new THREE.AmbientLight(0xffffff, 1.8));
       addDirectional(0xffffff, 2.1, [3, 5, 4]);
       addDirectional(0xffffff, 1.2, [-4, 2, 3]);
     } else {
-      state.renderer.setClearColor(0x8b9ba8, 1);
+      state.renderer?.setClearColor(0x8b9ba8, 1);
       state.lightRig.add(new THREE.AmbientLight(0xdcecff, 1.25));
       addDirectional(0xfff0cf, 2.6, [5, 7, 4]);
       addDirectional(0xb9d7ff, 0.65, [-4, 2, -2]);
@@ -205,6 +234,17 @@ export default function App() {
     }
 
     const loadId = ++loadIdRef.current;
+    let GLTFLoader: any;
+    try {
+      ({ GLTFLoader } = require("three/examples/jsm/loaders/GLTFLoader.js"));
+    } catch (error) {
+      Alert.alert(
+        "3D Nexus",
+        "Model yükleyici açılamadı: " +
+          (error instanceof Error ? error.message : "Bilinmeyen hata"),
+      );
+      return;
+    }
     const loader = new GLTFLoader();
     const onError = () => {
       if (loadId === loadIdRef.current) {
@@ -425,83 +465,106 @@ export default function App() {
       state?.placeholder.geometry.dispose();
       const material = state?.placeholder.material;
       if (material && !Array.isArray(material)) material.dispose();
-      state?.renderer.dispose();
+      state?.renderer?.dispose();
     };
   }, []);
 
   const onContextCreate = (gl: any) => {
-    const width = gl.drawingBufferWidth;
-    const height = gl.drawingBufferHeight;
-    const canvas = {
-      width,
-      height,
-      style: {},
-      addEventListener() {},
-      removeEventListener() {},
-      clientWidth: width,
-      clientHeight: height,
-      getContext: () => gl,
-    };
+    try {
+      setGlError(null);
+      const width = gl.drawingBufferWidth;
+      const height = gl.drawingBufferHeight;
+      const canvas = {
+        width,
+        height,
+        style: {},
+        addEventListener() {},
+        removeEventListener() {},
+        clientWidth: width,
+        clientHeight: height,
+        getContext: () => gl,
+      };
 
-    const renderer = new THREE.WebGLRenderer({
-      canvas,
-      context: gl,
-      antialias: true,
-    } as any);
-    renderer.setSize(width, height);
-    renderer.setClearColor(0x0a0a0b, 1);
+      let renderer: THREE.WebGLRenderer | null = null;
+      try {
+        renderer = new THREE.WebGLRenderer({
+          canvas,
+          context: gl,
+          antialias: true,
+        } as any);
+        renderer.setSize(width, height);
+        renderer.setClearColor(0x0a0a0b, 1);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "WebGL renderer başlatılamadı.";
+        setGlError(message);
+        Alert.alert("3D Nexus", "3D sahne açılamadı: " + message);
+        return;
+      }
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    camera.position.z = THREE.MathUtils.clamp(cameraZ, 1.2, 12);
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
+      camera.position.z = THREE.MathUtils.clamp(cameraZ, 1.2, 12);
 
-    const placeholder = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.9, 2),
-      new THREE.MeshStandardMaterial({
-        color: 0xd7dbe0,
-        metalness: 0.35,
-        roughness: 0.45,
-      }),
-    );
-    scene.add(placeholder);
+      const placeholder = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(0.9, 2),
+        new THREE.MeshStandardMaterial({
+          color: 0xd7dbe0,
+          metalness: 0.35,
+          roughness: 0.45,
+        }),
+      );
+      scene.add(placeholder);
 
-    const lightRig = new THREE.Group();
-    scene.add(lightRig);
+      const lightRig = new THREE.Group();
+      scene.add(lightRig);
+      sceneState.current = {
+        gl,
+        renderer,
+        scene,
+        camera,
+        placeholder,
+        lightRig,
+        modelPivot: null,
+      };
+      applyLightPreset(selectedPreset);
 
-    sceneState.current = {
-      gl,
-      renderer,
-      scene,
-      camera,
-      placeholder,
-      lightRig,
-      modelPivot: null,
-    };
-    applyLightPreset(selectedPreset);
+      const requestFrame =
+        typeof gl.requestAnimationFrame === "function"
+          ? gl.requestAnimationFrame.bind(gl)
+          : requestAnimationFrame;
+      cancelFrame.current =
+        typeof gl.cancelAnimationFrame === "function"
+          ? gl.cancelAnimationFrame.bind(gl)
+          : cancelAnimationFrame;
 
-    const requestFrame =
-      typeof gl.requestAnimationFrame === "function"
-        ? gl.requestAnimationFrame.bind(gl)
-        : requestAnimationFrame;
-    cancelFrame.current =
-      typeof gl.cancelAnimationFrame === "function"
-        ? gl.cancelAnimationFrame.bind(gl)
-        : cancelAnimationFrame;
+      const render = () => {
+        try {
+          const target = sceneState.current?.modelPivot ?? placeholder;
+          target.rotation.x = rotation.current.x;
+          target.rotation.y = rotation.current.y;
+          renderer?.render(scene, camera);
+          gl.endFrameEXP();
+          frameId.current = requestFrame(render);
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "3D çizim hatası.";
+          setGlError(message);
+        }
+      };
+      render();
 
-    const render = () => {
-      const target = sceneState.current?.modelPivot ?? placeholder;
-      target.rotation.x = rotation.current.x;
-      target.rotation.y = rotation.current.y;
-      renderer.render(scene, camera);
-      gl.endFrameEXP();
-      frameId.current = requestFrame(render);
-    };
-    render();
-
-    const pending = pendingModelRef.current;
-    if (pending) {
-      pendingModelRef.current = null;
-      void loadModel(pending);
+      const pending = pendingModelRef.current;
+      if (pending) {
+        pendingModelRef.current = null;
+        void loadModel(pending);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Bilinmeyen GL hatası";
+      setGlError(message);
+      Alert.alert("3D Nexus", "3D sahne açılamadı: " + message);
+      return;
     }
   };
 
@@ -521,6 +584,11 @@ export default function App() {
       </View>
       <View style={styles.stage} {...panResponder.panHandlers}>
         <GLView ref={glViewRef} style={styles.gl} onContextCreate={onContextCreate} />
+        {glError && (
+          <View style={styles.glError}>
+            <Text style={styles.glErrorText}>3D sahne açılamadı: {glError}</Text>
+          </View>
+        )}
       </View>
       <View style={styles.exportSection}>
         <Pressable style={styles.exportHeader} onPress={() => setExportOpen((value) => !value)}>
@@ -681,6 +749,17 @@ export default function App() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#0a0a0b" },
+  fatalError: { flex: 1, justifyContent: "center", padding: 24, gap: 10 },
+  fatalTitle: { color: "#ffffff", fontSize: 20, fontWeight: "700" },
+  fatalMessage: { color: "#c7cdd5", fontSize: 14, lineHeight: 20 },
+  glError: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "#0a0a0b",
+  },
+  glErrorText: { color: "#f2f4f7", fontSize: 14, textAlign: "center" },
   toolbar: {
     flexDirection: "row",
     gap: 10,
@@ -835,3 +914,12 @@ const styles = StyleSheet.create({
     color: "#ffffff",
   },
 });
+
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <StudioApp />
+    </ErrorBoundary>
+  );
+}
