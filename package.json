@@ -1,1 +1,33 @@
-{"name":"3d-nexus","private":true,"version":"1.0.0","type":"module","scripts":{"dev":"vite --host","build":"tsc -b && vite build","preview":"vite preview --host","android:sync":"npm run build && npx cap sync android"},"dependencies":{"@capacitor/android":"^8.0.0","@capacitor/core":"^8.0.0","@react-three/drei":"^10.7.6","@react-three/fiber":"^9.3.0","dexie":"^4.2.0","lucide-react":"^0.544.0","react":"^19.1.1","react-dom":"^19.1.1","three":"^0.180.0","zustand":"^5.0.8"},"devDependencies":{"@capacitor/cli":"^8.0.0","@types/react":"^19.1.16","@types/react-dom":"^19.1.9","@types/three":"^0.180.0","@vitejs/plugin-react":"^5.0.4","typescript":"^5.9.2","vite":"^7.1.7"}}
+{
+  "name": "3d-nexus",
+  "version": "1.0.0",
+  "private": true,
+  "main": "expo/AppEntry.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "build:apk": "eas build -p android --profile preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.1.2",
+    "expo": "~53.0.0",
+    "expo-document-picker": "~13.1.6",
+    "expo-file-system": "~18.1.11",
+    "expo-gl": "~15.1.7",
+    "expo-image-manipulator": "~13.1.7",
+    "expo-media-library": "~17.1.7",
+    "expo-sharing": "~13.1.5",
+    "expo-status-bar": "~2.2.3",
+    "react": "19.0.0",
+    "react-native": "0.79.5",
+    "three": "^0.180.0",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@types/react": "~19.0.10",
+    "@types/three": "^0.180.0",
+    "eas-cli": "^16.17.0",
+    "typescript": "~5.8.3"
+  }
+}
