@@ -14,4 +14,5 @@ jobs:
       - run: npm install
       - run: npm install -g eas-cli
       - run: eas whoami
+      - run: eas init --account asilturk07 --non-interactive
       - run: eas build --platform android --profile preview --non-interactive --no-wait
