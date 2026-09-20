@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "3D Nexus",
+    "slug": "3d-nexus",
+    "version": "1.0.0",
+    "orientation": "default",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "com.nexus3d.app",
+      "permissions": ["READ_MEDIA_IMAGES"]
+    },
+    "plugins": [
+      ["expo-media-library", {
+        "photosPermission": "3D Nexus, görsellerinizi göstermek için medya arşivinize erişir.",
+        "savePhotosPermission": "3D Nexus, ürettiğiniz görselleri galerinize kaydetmek için izin ister."
+      }]
+    ]
+  }
+}
