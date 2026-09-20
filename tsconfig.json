@@ -1,6 +1,6 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": { "strict": true, "jsx": "react-native" },
-  "include": ["App.tsx", "src/**/*.ts", "src/**/*.tsx"],
-  "exclude": ["node_modules", "src/main.tsx", "vite.config.ts"]
+  "include": ["App.tsx"],
+  "exclude": ["node_modules", "src/main.tsx", "src/App.tsx", "src/styles.css", "vite.config.ts", "capacitor.config.ts"]
 }
