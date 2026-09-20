@@ -4,6 +4,7 @@
     "slug": "3d-nexus",
     "version": "1.0.0",
     "owner": "asilturk07",
+    "newArchEnabled": false,
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
@@ -15,6 +16,7 @@
     "android": {
       "package": "com.nexus3d.app",
       "permissions": ["READ_MEDIA_IMAGES", "INTERNET"],
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0a0a0b"
@@ -26,7 +28,8 @@
         "savePhotosPermission": "3D Nexus, ürettiğiniz görselleri galerinize kaydetmek için izin ister."
       }],
       "expo-document-picker",
-      "expo-file-system"
+      "expo-file-system",
+      "expo-gl"
     ]
   }
 }
