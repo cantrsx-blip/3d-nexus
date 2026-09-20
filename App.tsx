@@ -5,7 +5,8 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
-import { exportSceneImage, type ExportOptions } from "./src/native/exportImage";
+import { exportSceneImage, type ExportFormat, type ExportOptions, type ExportResult } from "./src/native/exportImage";
+import * as Sharing from "expo-sharing";
 import {
   Alert,
   PanResponder,
@@ -13,6 +14,7 @@ import {
   SafeAreaView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
@@ -84,6 +86,14 @@ export default function App() {
   const pendingModelRef = useRef<string | null>(null);
   const loadIdRef = useRef(0);
   const [selectedPreset, setSelectedPreset] = useState<LightPreset>("Ürün");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
+  const [exportQuality, setExportQuality] = useState(90);
+  const [exportWidth, setExportWidth] = useState("1920");
+  const [exportHeight, setExportHeight] = useState("1080");
+  const [targetKb, setTargetKb] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<ExportResult | null>(null);
 
   const applyLightPreset = (preset: LightPreset) => {
     setSelectedPreset(preset);
@@ -219,6 +229,36 @@ export default function App() {
         error instanceof Error ? error.message : "Görsel üretilemedi.",
       );
       return null;
+    }
+  };
+
+  const createExport = async () => {
+    const width = THREE.MathUtils.clamp(Number(exportWidth) || 1920, 256, 4096);
+    const height = THREE.MathUtils.clamp(Number(exportHeight) || 1080, 256, 4096);
+    const target = Number(targetKb);
+
+    setExporting(true);
+    const result = await exportCurrentScene({
+      format: exportFormat,
+      quality: exportQuality,
+      width,
+      height,
+      targetKb: target > 0 ? target : undefined,
+    });
+    setExporting(false);
+    if (result) setExportResult(result);
+  };
+
+  const shareExport = async () => {
+    if (!exportResult) return;
+    try {
+      if (!(await Sharing.isAvailableAsync())) {
+        Alert.alert("3D Nexus", "Bu cihazda paylaşım kullanılamıyor.");
+        return;
+      }
+      await Sharing.shareAsync(exportResult.uri);
+    } catch {
+      Alert.alert("3D Nexus", "Görsel paylaşılamadı.");
     }
   };
 
@@ -408,6 +448,87 @@ export default function App() {
       <View style={styles.stage} {...panResponder.panHandlers}>
         <GLView ref={glViewRef} style={styles.gl} onContextCreate={onContextCreate} />
       </View>
+      <View style={styles.exportSection}>
+        <Pressable style={styles.exportHeader} onPress={() => setExportOpen((value) => !value)}>
+          <Text style={styles.exportHeaderText}>Üret</Text>
+          <Text style={styles.exportHeaderText}>{exportOpen ? "Kapat" : "Aç"}</Text>
+        </Pressable>
+        {exportOpen && (
+          <View style={styles.exportPanel}>
+            <View style={styles.row}>
+              {(["png", "jpg", "webp"] as ExportFormat[]).map((format) => (
+                <Pressable
+                  key={format}
+                  style={[styles.choice, exportFormat === format && styles.choiceSelected]}
+                  onPress={() => setExportFormat(format)}
+                >
+                  <Text style={styles.choiceText}>{format.toUpperCase()}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <View style={styles.settingRow}>
+              <Text style={styles.label}>Kalite: {exportQuality}</Text>
+              <Pressable
+                disabled={exportFormat === "png"}
+                style={[styles.stepButton, exportFormat === "png" && styles.disabled]}
+                onPress={() => setExportQuality((value) => Math.max(1, value - 5))}
+              >
+                <Text style={styles.stepText}>-</Text>
+              </Pressable>
+              <Pressable
+                disabled={exportFormat === "png"}
+                style={[styles.stepButton, exportFormat === "png" && styles.disabled]}
+                onPress={() => setExportQuality((value) => Math.min(100, value + 5))}
+              >
+                <Text style={styles.stepText}>+</Text>
+              </Pressable>
+            </View>
+            <View style={styles.row}>
+              <TextInput
+                style={styles.input}
+                value={exportWidth}
+                onChangeText={setExportWidth}
+                keyboardType="number-pad"
+                placeholder="Genişlik"
+                placeholderTextColor="#737b86"
+              />
+              <TextInput
+                style={styles.input}
+                value={exportHeight}
+                onChangeText={setExportHeight}
+                keyboardType="number-pad"
+                placeholder="Yükseklik"
+                placeholderTextColor="#737b86"
+              />
+              <TextInput
+                style={styles.input}
+                value={targetKb}
+                onChangeText={setTargetKb}
+                keyboardType="number-pad"
+                placeholder="Hedef KB"
+                placeholderTextColor="#737b86"
+              />
+            </View>
+            <Pressable
+              disabled={exporting}
+              style={[styles.generateButton, exporting && styles.disabled]}
+              onPress={() => void createExport()}
+            >
+              <Text style={styles.generateText}>{exporting ? "Üretiliyor…" : "Görsel üret"}</Text>
+            </Pressable>
+            {exportResult && (
+              <View style={styles.resultRow}>
+                <Text style={styles.resultText}>
+                  {Math.ceil(exportResult.bytes / 1024)} KB · {exportResult.width}x{exportResult.height}
+                </Text>
+                <Pressable style={styles.shareButton} onPress={() => void shareExport()}>
+                  <Text style={styles.shareText}>Paylaş / kaydet</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
       <View style={styles.presetBar}>
         {LIGHT_PRESETS.map((preset) => (
           <Pressable
@@ -456,6 +577,67 @@ const styles = StyleSheet.create({
   buttonText: { color: "#f2f4f7", fontSize: 15, fontWeight: "600" },
   stage: { flex: 1 },
   gl: { flex: 1 },
+  exportSection: {
+    borderTopWidth: 1,
+    borderColor: "#20252c",
+    backgroundColor: "#0a0a0b",
+  },
+  exportHeader: {
+    height: 48,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  exportHeaderText: { color: "#f2f4f7", fontSize: 14, fontWeight: "700" },
+  exportPanel: { paddingHorizontal: 10, paddingBottom: 10, gap: 8 },
+  row: { flexDirection: "row", gap: 6 },
+  choice: {
+    flex: 1,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#2b313a",
+    borderRadius: 8,
+  },
+  choiceSelected: { borderColor: "#4aa3ff", backgroundColor: "#172331" },
+  choiceText: { color: "#f2f4f7", fontSize: 12, fontWeight: "600" },
+  settingRow: { height: 38, flexDirection: "row", alignItems: "center", gap: 8 },
+  label: { flex: 1, color: "#c7cdd5", fontSize: 13 },
+  stepButton: {
+    width: 44,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: "#20262e",
+  },
+  stepText: { color: "#ffffff", fontSize: 20, fontWeight: "700" },
+  disabled: { opacity: 0.45 },
+  input: {
+    flex: 1,
+    height: 40,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: "#2b313a",
+    borderRadius: 8,
+    color: "#ffffff",
+    backgroundColor: "#111419",
+    fontSize: 12,
+  },
+  generateButton: {
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    backgroundColor: "#246fb2",
+  },
+  generateText: { color: "#ffffff", fontSize: 15, fontWeight: "700" },
+  resultRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  resultText: { flex: 1, color: "#c7cdd5", fontSize: 12 },
+  shareButton: { height: 36, paddingHorizontal: 12, justifyContent: "center", borderRadius: 8, backgroundColor: "#20262e" },
+  shareText: { color: "#ffffff", fontSize: 12, fontWeight: "600" },
   presetBar: {
     height: 48,
     flexDirection: "row",
