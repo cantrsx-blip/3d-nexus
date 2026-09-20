@@ -28,8 +28,12 @@
         "savePhotosPermission": "3D Nexus, ürettiğiniz görselleri galerinize kaydetmek için izin ister."
       }],
       "expo-document-picker",
-      "expo-file-system",
-      "expo-gl"
-    ]
+      "expo-file-system"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "84542557-f23a-4adf-a2d9-8200dfc99940"
+      }
+    }
   }
 }
