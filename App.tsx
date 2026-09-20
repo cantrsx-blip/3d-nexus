@@ -5,6 +5,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
+import { exportSceneImage, type ExportOptions } from "./src/native/exportImage";
 import {
   Alert,
   PanResponder,
@@ -79,6 +80,7 @@ export default function App() {
   const frameId = useRef<number | null>(null);
   const cancelFrame = useRef<((id: number) => void) | null>(null);
   const sceneState = useRef<SceneState | null>(null);
+  const glViewRef = useRef<GLView | null>(null);
   const pendingModelRef = useRef<string | null>(null);
   const loadIdRef = useRef(0);
   const [selectedPreset, setSelectedPreset] = useState<LightPreset>("Ürün");
@@ -208,6 +210,18 @@ export default function App() {
     }
   };
 
+  const exportCurrentScene = async (options: ExportOptions) => {
+    try {
+      return await exportSceneImage(glViewRef.current as any, options);
+    } catch (error) {
+      Alert.alert(
+        "3D Nexus",
+        error instanceof Error ? error.message : "Görsel üretilemedi.",
+      );
+      return null;
+    }
+  };
+
   const selectModel = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -219,7 +233,11 @@ export default function App() {
       const asset = result.assets[0];
       if (!asset) return;
       const sourceName = asset.name || decodeURIComponent(asset.uri.split("/").pop() || "");
-      if (!/\.(glb|gltf)(?:$|\?)/i.test(sourceName)) {
+      if (/\.gltf(?:$|\?)/i.test(sourceName)) {
+        Alert.alert("3D Nexus", "Harici dokulu GLTF desteklenmiyor. GLB seçin.");
+        return;
+      }
+      if (!/\.glb(?:$|\?)/i.test(sourceName)) {
         Alert.alert("3D Nexus", "Lütfen GLB veya GLTF dosyası seçin.");
         return;
       }
@@ -388,7 +406,7 @@ export default function App() {
         </Pressable>
       </View>
       <View style={styles.stage} {...panResponder.panHandlers}>
-        <GLView style={styles.gl} onContextCreate={onContextCreate} />
+        <GLView ref={glViewRef} style={styles.gl} onContextCreate={onContextCreate} />
       </View>
       <View style={styles.presetBar}>
         {LIGHT_PRESETS.map((preset) => (
