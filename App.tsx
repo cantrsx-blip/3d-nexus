@@ -7,6 +7,7 @@ import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system";
 import { exportSceneImage, type ExportFormat, type ExportOptions, type ExportResult } from "./src/native/exportImage";
 import * as Sharing from "expo-sharing";
+import { useStudioStore } from "./src/native/store";
 import {
   Alert,
   PanResponder,
@@ -85,15 +86,36 @@ export default function App() {
   const glViewRef = useRef<GLView | null>(null);
   const pendingModelRef = useRef<string | null>(null);
   const loadIdRef = useRef(0);
-  const [selectedPreset, setSelectedPreset] = useState<LightPreset>("Ürün");
   const [exportOpen, setExportOpen] = useState(false);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>("png");
-  const [exportQuality, setExportQuality] = useState(90);
-  const [exportWidth, setExportWidth] = useState("1920");
-  const [exportHeight, setExportHeight] = useState("1080");
-  const [targetKb, setTargetKb] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
+  const [hydrated, setHydrated] = useState(useStudioStore.persist.hasHydrated());
+
+  const selectedPreset = useStudioStore((state) => state.selectedPreset) as LightPreset;
+  const exportFormat = useStudioStore((state) => state.exportFormat);
+  const exportQuality = useStudioStore((state) => state.exportQuality);
+  const exportWidth = useStudioStore((state) => state.exportWidth);
+  const exportHeight = useStudioStore((state) => state.exportHeight);
+  const targetKb = useStudioStore((state) => state.targetKb);
+  const storedRotation = useStudioStore((state) => state.rotation);
+  const cameraZ = useStudioStore((state) => state.cameraZ);
+  const lastModel = useStudioStore((state) => state.lastModel);
+  const tourDone = useStudioStore((state) => state.tourDone);
+  const tourStep = useStudioStore((state) => state.tourStep);
+  const gallery = useStudioStore((state) => state.gallery);
+  const setSelectedPreset = useStudioStore((state) => state.setSelectedPreset);
+  const setExportFormat = useStudioStore((state) => state.setExportFormat);
+  const setExportQuality = useStudioStore((state) => state.setExportQuality);
+  const setExportWidth = useStudioStore((state) => state.setExportWidth);
+  const setExportHeight = useStudioStore((state) => state.setExportHeight);
+  const setTargetKb = useStudioStore((state) => state.setTargetKb);
+  const setStoredRotation = useStudioStore((state) => state.setRotation);
+  const setCameraZ = useStudioStore((state) => state.setCameraZ);
+  const setLastModel = useStudioStore((state) => state.setLastModel);
+  const setTourDone = useStudioStore((state) => state.setTourDone);
+  const setTourStep = useStudioStore((state) => state.setTourStep);
+  const addGalleryItem = useStudioStore((state) => state.addGalleryItem);
+  const setGallery = useStudioStore((state) => state.setGallery);
 
   const applyLightPreset = (preset: LightPreset) => {
     setSelectedPreset(preset);
@@ -170,9 +192,9 @@ export default function App() {
     state.placeholder.visible = false;
     state.modelPivot = pivot;
     state.scene.add(pivot);
-    state.camera.position.z = THREE.MathUtils.clamp(3.2, 1.2, 12);
-    rotation.current = { x: 0, y: 0 };
-    baseRot.current = { x: 0, y: 0 };
+    state.camera.position.z = THREE.MathUtils.clamp(cameraZ, 1.2, 12);
+    rotation.current = { ...storedRotation };
+    baseRot.current = { ...storedRotation };
   };
 
   const loadModel = async (uri: string) => {
@@ -233,9 +255,9 @@ export default function App() {
   };
 
   const createExport = async () => {
-    const width = THREE.MathUtils.clamp(Number(exportWidth) || 1920, 256, 4096);
-    const height = THREE.MathUtils.clamp(Number(exportHeight) || 1080, 256, 4096);
-    const target = Number(targetKb);
+    const width = THREE.MathUtils.clamp(exportWidth || 1920, 256, 4096);
+    const height = THREE.MathUtils.clamp(exportHeight || 1080, 256, 4096);
+    const target = targetKb ?? 0;
 
     setExporting(true);
     const result = await exportCurrentScene({
@@ -246,7 +268,10 @@ export default function App() {
       targetKb: target > 0 ? target : undefined,
     });
     setExporting(false);
-    if (result) setExportResult(result);
+    if (result) {
+      setExportResult(result);
+      addGalleryItem({ ...result, createdAt: Date.now() });
+    }
   };
 
   const shareExport = async () => {
@@ -260,6 +285,11 @@ export default function App() {
     } catch {
       Alert.alert("3D Nexus", "Görsel paylaşılamadı.");
     }
+  };
+
+  const loadSample = async () => {
+    setLastModel({ kind: "sample" });
+    await loadModel(SAMPLE_URL);
   };
 
   const selectModel = async () => {
@@ -282,14 +312,14 @@ export default function App() {
         return;
       }
 
-      let uri = asset.uri;
-      if (uri.startsWith("content://")) {
-        const extension = sourceName.toLowerCase().includes(".gltf") ? ".gltf" : ".glb";
-        const destination =
-          FileSystem.cacheDirectory + "3d-nexus-" + Date.now() + extension;
-        await FileSystem.copyAsync({ from: uri, to: destination });
-        uri = destination;
+      const modelsDirectory = FileSystem.documentDirectory + "models/";
+      const modelsInfo = await FileSystem.getInfoAsync(modelsDirectory);
+      if (!modelsInfo.exists) {
+        await FileSystem.makeDirectoryAsync(modelsDirectory, { intermediates: true });
       }
+      const uri = modelsDirectory + "3D-Nexus-model-" + Date.now() + ".glb";
+      await FileSystem.copyAsync({ from: asset.uri, to: uri });
+      setLastModel({ kind: "local", uri });
       await loadModel(uri);
     } catch {
       Alert.alert("3D Nexus", "Dosya seçilirken bir hata oluştu.");
@@ -336,12 +366,53 @@ export default function App() {
       },
       onPanResponderRelease: () => {
         pinchDistance.current = null;
+        setStoredRotation({ ...rotation.current });
+        if (sceneState.current) setCameraZ(sceneState.current.camera.position.z);
       },
       onPanResponderTerminate: () => {
         pinchDistance.current = null;
+        setStoredRotation({ ...rotation.current });
+        if (sceneState.current) setCameraZ(sceneState.current.camera.position.z);
       },
     }),
   ).current;
+
+  useEffect(() => {
+    const unsubscribe = useStudioStore.persist.onFinishHydration(() => setHydrated(true));
+    if (useStudioStore.persist.hasHydrated()) setHydrated(true);
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    rotation.current = { ...storedRotation };
+    baseRot.current = { ...storedRotation };
+    if (sceneState.current) {
+      sceneState.current.camera.position.z = THREE.MathUtils.clamp(cameraZ, 1.2, 12);
+      applyLightPreset(selectedPreset);
+    }
+
+    void (async () => {
+      const validGallery = [];
+      for (const item of gallery.slice(0, 50)) {
+        const info = await FileSystem.getInfoAsync(item.uri);
+        if (info.exists) validGallery.push(item);
+      }
+      if (validGallery.length !== gallery.length) setGallery(validGallery);
+
+      if (lastModel?.kind === "sample") {
+        await loadModel(SAMPLE_URL);
+      } else if (lastModel?.kind === "local") {
+        const info = await FileSystem.getInfoAsync(lastModel.uri);
+        if (info.exists) {
+          await loadModel(lastModel.uri);
+        } else {
+          setLastModel(null);
+          Alert.alert("3D Nexus", "Model dosyası silinmiş, yeniden seçin");
+        }
+      }
+    })();
+  }, [hydrated]);
 
   useEffect(() => {
     return () => {
@@ -382,7 +453,7 @@ export default function App() {
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    camera.position.z = 3;
+    camera.position.z = THREE.MathUtils.clamp(cameraZ, 1.2, 12);
 
     const placeholder = new THREE.Mesh(
       new THREE.IcosahedronGeometry(0.9, 2),
@@ -438,11 +509,14 @@ export default function App() {
     <SafeAreaView style={styles.safe}>
       <StatusBar style="light" />
       <View style={styles.toolbar}>
-        <Pressable style={styles.button} onPress={() => void loadModel(SAMPLE_URL)}>
+        <Pressable style={styles.button} onPress={() => void loadSample()}>
           <Text style={styles.buttonText}>Örnek model</Text>
         </Pressable>
         <Pressable style={styles.button} onPress={() => void selectModel()}>
           <Text style={styles.buttonText}>GLB seç</Text>
+        </Pressable>
+        <Pressable style={styles.helpButton} onPress={() => { setTourDone(false); setTourStep(0); }}>
+          <Text style={styles.buttonText}>Yardım</Text>
         </Pressable>
       </View>
       <View style={styles.stage} {...panResponder.panHandlers}>
@@ -486,24 +560,24 @@ export default function App() {
             <View style={styles.row}>
               <TextInput
                 style={styles.input}
-                value={exportWidth}
-                onChangeText={setExportWidth}
+                value={exportWidth ? String(exportWidth) : ""}
+                onChangeText={(value) => setExportWidth(Number(value) || 0)}
                 keyboardType="number-pad"
                 placeholder="Genişlik"
                 placeholderTextColor="#737b86"
               />
               <TextInput
                 style={styles.input}
-                value={exportHeight}
-                onChangeText={setExportHeight}
+                value={exportHeight ? String(exportHeight) : ""}
+                onChangeText={(value) => setExportHeight(Number(value) || 0)}
                 keyboardType="number-pad"
                 placeholder="Yükseklik"
                 placeholderTextColor="#737b86"
               />
               <TextInput
                 style={styles.input}
-                value={targetKb}
-                onChangeText={setTargetKb}
+                value={targetKb ? String(targetKb) : ""}
+                onChangeText={(value) => setTargetKb(value ? Number(value) || null : null)}
                 keyboardType="number-pad"
                 placeholder="Hedef KB"
                 placeholderTextColor="#737b86"
@@ -529,6 +603,22 @@ export default function App() {
           </View>
         )}
       </View>
+      {gallery.length > 0 && (
+        <View style={styles.galleryList}>
+          <Text style={styles.galleryTitle}>Galeri</Text>
+          {gallery.slice(0, 8).map((item) => (
+            <Pressable
+              key={item.uri}
+              style={styles.galleryRow}
+              onPress={() => void Sharing.shareAsync(item.uri)}
+            >
+              <Text style={styles.galleryText}>
+                {Math.ceil(item.bytes / 1024)} KB · {new Date(item.createdAt).toLocaleDateString("tr-TR")}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
       <View style={styles.presetBar}>
         {LIGHT_PRESETS.map((preset) => (
           <Pressable
@@ -551,6 +641,40 @@ export default function App() {
           </Pressable>
         ))}
       </View>
+      {!tourDone && hydrated && (
+        <View style={styles.tourOverlay}>
+          <View style={styles.tourCard}>
+            <Text style={styles.tourCounter}>{tourStep + 1} / 6</Text>
+            <Text style={styles.tourText}>
+              {[
+                "Örnek model veya GLB seç",
+                "Tek parmak döndür, iki parmak yakınlaştır",
+                "Altta ışık hazır ayarları",
+                "Üret: format, kalite, KB",
+                "Paylaş / galeriye kaydet",
+                "Uygulama kapanınca kaldığın yerden devam",
+              ][tourStep]}
+            </Text>
+            <View style={styles.tourActions}>
+              <Pressable onPress={() => { setTourDone(true); setTourStep(0); }}>
+                <Text style={styles.tourActionText}>Atla</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (tourStep >= 5) {
+                    setTourDone(true);
+                    setTourStep(0);
+                  } else {
+                    setTourStep(tourStep + 1);
+                  }
+                }}
+              >
+                <Text style={styles.tourActionText}>{tourStep >= 5 ? "Bitir" : "İleri"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -574,7 +698,17 @@ const styles = StyleSheet.create({
     borderColor: "#2b313a",
     backgroundColor: "#15191f",
   },
-  buttonText: { color: "#f2f4f7", fontSize: 15, fontWeight: "600" },
+  buttonText: { color: "#f2f4f7", fontSize: 13, fontWeight: "600" },
+  helpButton: {
+    height: 48,
+    paddingHorizontal: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#2b313a",
+    backgroundColor: "#15191f",
+  },
   stage: { flex: 1 },
   gl: { flex: 1 },
   exportSection: {
@@ -638,6 +772,38 @@ const styles = StyleSheet.create({
   resultText: { flex: 1, color: "#c7cdd5", fontSize: 12 },
   shareButton: { height: 36, paddingHorizontal: 12, justifyContent: "center", borderRadius: 8, backgroundColor: "#20262e" },
   shareText: { color: "#ffffff", fontSize: 12, fontWeight: "600" },
+  galleryList: {
+    maxHeight: 190,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderColor: "#20252c",
+    backgroundColor: "#0a0a0b",
+  },
+  galleryTitle: { color: "#f2f4f7", fontSize: 12, fontWeight: "700", marginBottom: 4 },
+  galleryRow: { height: 20, justifyContent: "center" },
+  galleryText: { color: "#aeb5bf", fontSize: 11 },
+  tourOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(0,0,0,0.72)",
+  },
+  tourCard: {
+    width: "100%",
+    maxWidth: 420,
+    padding: 20,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#343b45",
+    backgroundColor: "#15191f",
+    gap: 14,
+  },
+  tourCounter: { color: "#8e98a6", fontSize: 12 },
+  tourText: { color: "#ffffff", fontSize: 18, fontWeight: "700", lineHeight: 25 },
+  tourActions: { flexDirection: "row", justifyContent: "space-between" },
+  tourActionText: { color: "#79baff", fontSize: 15, fontWeight: "700" },
   presetBar: {
     height: 48,
     flexDirection: "row",
