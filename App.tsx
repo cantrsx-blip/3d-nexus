@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StatusBar } from "expo-status-bar";
 import { GLView } from "expo-gl";
 import * as THREE from "three";
@@ -18,12 +18,17 @@ import {
 const SAMPLE_URL =
   "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/DamagedHelmet/glTF-Binary/DamagedHelmet.glb";
 
+type LightPreset = "Ürün" | "Portre" | "Karanlık" | "Beyaz stüdyo" | "Dış mekan";
+
+const LIGHT_PRESETS: LightPreset[] = ["Ürün", "Portre", "Karanlık", "Beyaz stüdyo", "Dış mekan"];
+
 type SceneState = {
   gl: any;
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   placeholder: THREE.Mesh;
+  lightRig: THREE.Group;
   modelPivot: THREE.Group | null;
 };
 
@@ -76,6 +81,52 @@ export default function App() {
   const sceneState = useRef<SceneState | null>(null);
   const pendingModelRef = useRef<string | null>(null);
   const loadIdRef = useRef(0);
+  const [selectedPreset, setSelectedPreset] = useState<LightPreset>("Ürün");
+
+  const applyLightPreset = (preset: LightPreset) => {
+    setSelectedPreset(preset);
+    const state = sceneState.current;
+    if (!state) return;
+
+    state.lightRig.clear();
+
+    const addDirectional = (
+      color: number,
+      intensity: number,
+      position: [number, number, number],
+    ) => {
+      const light = new THREE.DirectionalLight(color, intensity);
+      light.position.set(...position);
+      state.lightRig.add(light);
+    };
+
+    if (preset === "Ürün") {
+      state.renderer.setClearColor(0x0a0a0b, 1);
+      state.lightRig.add(new THREE.AmbientLight(0xffffff, 1.15));
+      addDirectional(0xffffff, 2.5, [3, 4, 5]);
+      addDirectional(0xbfd8ff, 1.1, [-4, 2, 2]);
+    } else if (preset === "Portre") {
+      state.renderer.setClearColor(0x0a0a0b, 1);
+      state.lightRig.add(new THREE.AmbientLight(0xffead8, 0.9));
+      addDirectional(0xffd7b0, 2.3, [2, 4, 4]);
+      addDirectional(0xb9d7ff, 0.8, [-3, 1, 2]);
+    } else if (preset === "Karanlık") {
+      state.renderer.setClearColor(0x050608, 1);
+      state.lightRig.add(new THREE.AmbientLight(0x9eb7d6, 0.28));
+      addDirectional(0x8fb9ff, 1.8, [4, 3, 2]);
+      addDirectional(0xffffff, 0.45, [-3, -1, 1]);
+    } else if (preset === "Beyaz stüdyo") {
+      state.renderer.setClearColor(0xe8eaed, 1);
+      state.lightRig.add(new THREE.AmbientLight(0xffffff, 1.8));
+      addDirectional(0xffffff, 2.1, [3, 5, 4]);
+      addDirectional(0xffffff, 1.2, [-4, 2, 3]);
+    } else {
+      state.renderer.setClearColor(0x8b9ba8, 1);
+      state.lightRig.add(new THREE.AmbientLight(0xdcecff, 1.25));
+      addDirectional(0xfff0cf, 2.6, [5, 7, 4]);
+      addDirectional(0xb9d7ff, 0.65, [-4, 2, -2]);
+    }
+  };
 
   const applyLoadedModel = (loadedScene: THREE.Group, loadId: number) => {
     const state = sceneState.current;
@@ -284,11 +335,9 @@ export default function App() {
       }),
     );
     scene.add(placeholder);
-    scene.add(new THREE.AmbientLight(0xffffff, 1.1));
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 2.2);
-    directionalLight.position.set(3, 4, 5);
-    scene.add(directionalLight);
+    const lightRig = new THREE.Group();
+    scene.add(lightRig);
 
     sceneState.current = {
       gl,
@@ -296,8 +345,10 @@ export default function App() {
       scene,
       camera,
       placeholder,
+      lightRig,
       modelPivot: null,
     };
+    applyLightPreset(selectedPreset);
 
     const requestFrame =
       typeof gl.requestAnimationFrame === "function"
@@ -339,6 +390,28 @@ export default function App() {
       <View style={styles.stage} {...panResponder.panHandlers}>
         <GLView style={styles.gl} onContextCreate={onContextCreate} />
       </View>
+      <View style={styles.presetBar}>
+        {LIGHT_PRESETS.map((preset) => (
+          <Pressable
+            key={preset}
+            style={[
+              styles.presetButton,
+              selectedPreset === preset && styles.presetButtonSelected,
+            ]}
+            onPress={() => applyLightPreset(preset)}
+          >
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.presetText,
+                selectedPreset === preset && styles.presetTextSelected,
+              ]}
+            >
+              {preset}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
     </SafeAreaView>
   );
 }
@@ -365,4 +438,34 @@ const styles = StyleSheet.create({
   buttonText: { color: "#f2f4f7", fontSize: 15, fontWeight: "600" },
   stage: { flex: 1 },
   gl: { flex: 1 },
+  presetBar: {
+    height: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 6,
+    backgroundColor: "#0a0a0b",
+  },
+  presetButton: {
+    flex: 1,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#252a31",
+    backgroundColor: "#111419",
+  },
+  presetButtonSelected: {
+    borderColor: "#4aa3ff",
+    backgroundColor: "#172331",
+  },
+  presetText: {
+    color: "#aeb5bf",
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  presetTextSelected: {
+    color: "#ffffff",
+  },
 });
