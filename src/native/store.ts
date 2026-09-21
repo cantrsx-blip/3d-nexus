@@ -102,6 +102,11 @@ export const useStudioStore = create<StudioState>()(
     {
       name: "3d-nexus-studio",
       storage: createJSONStorage(() => safeStorage),
+      onRehydrateStorage: () => (_state, error) => {
+        if (error) {
+          void AsyncStorage.removeItem("3d-nexus-studio").catch(() => undefined);
+        }
+      },
       partialize: (state) => ({
         selectedPreset: state.selectedPreset,
         exportFormat: state.exportFormat,

@@ -2,7 +2,7 @@
   "expo": {
     "name": "3D Nexus",
     "slug": "3d-nexus",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "owner": "asilturk07",
     "newArchEnabled": false,
     "orientation": "default",
@@ -24,7 +24,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0a0a0b"
       },
-      "largeHeap": true
+      "largeHeap": true,
+      "versionCode": 2
     },
     "plugins": [
       [
